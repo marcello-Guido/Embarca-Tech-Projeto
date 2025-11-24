@@ -7,6 +7,53 @@
 #include "task.h"
 #include "queue.h"
 
+// Wifi
+#include "pico/cyw43_arch.h"
+
+// ---------- WIFI TASK ----------
+#define WIFI_SSID "MAURO GUIDO"
+#define WIFI_PASS "1975mmpg"
+
+volatile bool wifi_conectado = false;  // outras tasks podem ler isso
+
+void taskWifi(void *pvParameters) {
+    printf("[WiFi] Inicializando módulo CYW43...\n");
+
+    if (cyw43_arch_init()) {
+        printf("[WiFi] ERRO: falha ao inicializar CYW43!\n");
+        while (1) { vTaskDelay(pdMS_TO_TICKS(1000)); }
+    }
+
+    cyw43_arch_enable_sta_mode();
+
+    while (1) {
+        printf("[WiFi] Conectando a %s...\n", WIFI_SSID);
+
+        int result = cyw43_arch_wifi_connect_timeout_ms(
+            WIFI_SSID,
+            WIFI_PASS,
+            CYW43_AUTH_WPA2_AES_PSK,
+            10000   // timeout 10s
+        );
+
+        if (result == 0) {
+            wifi_conectado = true;
+            printf("[WiFi] Conectado com sucesso! 🎉\n");
+
+            // Mantém a task viva e monitorando
+            while (wifi_conectado) {
+                cyw43_arch_poll();  // mantém o WiFi funcionando
+                vTaskDelay(pdMS_TO_TICKS(2000));
+            }
+
+        } else {
+            wifi_conectado = false;
+            printf("[WiFi] Falha ao conectar (%d). Tentando novamente...\n", result);
+            vTaskDelay(pdMS_TO_TICKS(5000)); // espera 5s antes de tentar de novo
+        }
+    }
+}
+
 // Fila global
 QueueHandle_t filaSensores;
 
@@ -57,6 +104,7 @@ int main() {
     xTaskCreate(taskSensor, "Sensor", 1024, NULL, 1, NULL);
     xTaskCreate(taskProcessamento, "Processamento", 1024, NULL, 1, NULL);
     xTaskCreate(taskLogger, "Logger", 1024, NULL, 1, NULL);
+    xTaskCreate(taskWifi, "WiFi", 2048, NULL, 2, NULL);
 
     // Inicia o scheduler
     vTaskStartScheduler();

@@ -60,7 +60,8 @@ target_include_directories(embarca-final PRIVATE
 # Add any user requested libraries
 target_link_libraries(embarca-final 
     FreeRTOS-Kernel 
-    FreeRTOS-Kernel-Heap4  
+    FreeRTOS-Kernel-Heap4
+    pico_cyw43_arch_lwip_threadsafe_background  
 )
 
 pico_add_extra_outputs(embarca-final)
