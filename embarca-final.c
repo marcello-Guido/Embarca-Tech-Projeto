@@ -20,12 +20,18 @@ char button1[50] = "Nenhum evento";
 char button2[50] = "Nenhum evento";
 char http_response[1024];
 
+float temperatura = 0.0f;
+float umidade = 0.0f;
+float luminosidade = 0.0f;
+float distancia = 0.0f;
+
 // ---------- WIFI TASK ----------
 #define WIFI_SSID "MAURO GUIDO"
 #define WIFI_PASS "1975mmpg"
 
 volatile bool wifi_conectado = false; // outras tasks podem ler isso
 
+// Resposta http
 void create_http_response()
 {
     snprintf(http_response, sizeof(http_response),
@@ -43,14 +49,23 @@ void create_http_response()
              "</head>"
              "<body>"
              "  <h1>Controle do Sensor e Status dos Botões</h1>"
+
              "  <p><a href=\"/led/on\">Ligar LED</a></p>"
              "  <p><a href=\"/led/off\">Desligar LED</a></p>"
+
              "  <h2>Estado dos Botões:</h2>"
              "  <p>Botão 1: %s</p>"
              "  <p>Botão 2: %s</p>"
+
+             "  <h2>Sensores:</h2>"
+             "  <p>Temperatura: %.2f °C</p>"
+             "  <p>Umidade: %.2f %%</p>"
+             "  <p>Luminosidade: %.0f lux</p>"
+             "  <p>Distância: %.0f mm</p>"
+
              "</body>"
              "</html>\r\n",
-             button1, button2);
+             button1, button2, temperatura, umidade, luminosidade, distancia);
 }
 
 static err_t http_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
@@ -116,8 +131,8 @@ static void start_http_server(void)
     printf("Servidor HTTP rodando na porta 80...\n");
 }
 
-void buttons()
-{
+// Status dos botões
+void buttons(){
     static bool button1_last_state = false;
     static bool button2_last_state = false;
     bool button1_state = !gpio_get(BUTTON1_PIN); // Botão pressionado = LOW
@@ -155,8 +170,36 @@ void buttons()
 // Fila global
 QueueHandle_t filaSensores;
 
-// -------- TASK 1: Sensor (simulado) --------
-//
+// -------- TASK 1: Sensor (Temperatura e umidade) --------
+void taskTempUmidade(void *pvParameters)
+{
+    while (1)
+    {
+        temperatura = 20 + rand() % 10; // 20 a 29
+        umidade = 40 + rand() % 20;     // 40 a 59
+
+        vTaskDelay(pdMS_TO_TICKS(1000)); // 1 segundo
+    }
+}
+// -------- TASK 2: Sensor (Luminosidade) --------
+void taskLuminosidade(void *pvParameters)
+{
+    while (1)
+    {
+        luminosidade = rand() % 1000; // 0 a 999 lux
+
+        vTaskDelay(pdMS_TO_TICKS(200)); // 200ms
+    }
+}
+// -------- TASK 3: Sensor (Distancia) --------
+void taskDistancia(void *pvParameters)
+{
+    while (1)
+    {
+        distancia = 30 + rand() % 200;  // 30 a 229 mm
+        vTaskDelay(pdMS_TO_TICKS(150)); // 150ms
+    }
+}
 // -------- TASK 4: Wifi --------
 void taskWifi(void *pvParameters)
 {
@@ -248,12 +291,12 @@ int main()
     }
 
     // Cria tasks
-    // xTaskCreate(taskSensor, "Sensor", 1024, NULL, 1, NULL);
-    // xTaskCreate(taskProcessamento, "Processamento", 1024, NULL, 1, NULL);
-    // xTaskCreate(taskLogger, "Logger", 1024, NULL, 1, NULL);
+    xTaskCreate(taskTempUmidade, "TempUmid", 1024, NULL, 1, NULL);
+    xTaskCreate(taskLuminosidade, "Luminosidade", 1024, NULL, 1, NULL);
+    xTaskCreate(taskDistancia, "Distancia", 1024, NULL, 1, NULL);
     xTaskCreate(taskWifi, "WiFi", 2048, NULL, 2, NULL);
-
     xTaskCreate(taskHttp, "Http", 2048, NULL, 2, NULL);
+
     // Inicia o scheduler
     vTaskStartScheduler();
 
