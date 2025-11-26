@@ -12,6 +12,11 @@
 #include "lwip/tcp.h"
 #include <string.h>
 
+// Sensores
+#include "hardware/i2c.h"
+#include "aht10.h"
+#include "display.h"
+
 #define BUTTON1_PIN 5 // botão 1
 #define BUTTON2_PIN 6 // botão 2
 #define LED_PIN 12    // sensor
@@ -21,7 +26,7 @@ char button2[50] = "Nenhum evento";
 char http_response[1024];
 
 float temperatura = 0.0f;
-float umidade = 0.0f;
+float humidade = 0.0f;
 float luminosidade = 0.0f;
 float distancia = 0.0f;
 
@@ -65,7 +70,7 @@ void create_http_response()
 
              "</body>"
              "</html>\r\n",
-             button1, button2, temperatura, umidade, luminosidade, distancia);
+             button1, button2, temperatura, humidade, luminosidade, distancia);
 }
 
 static err_t http_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
@@ -132,7 +137,8 @@ static void start_http_server(void)
 }
 
 // Status dos botões
-void buttons(){
+void buttons()
+{
     static bool button1_last_state = false;
     static bool button2_last_state = false;
     bool button1_state = !gpio_get(BUTTON1_PIN); // Botão pressionado = LOW
@@ -173,12 +179,27 @@ QueueHandle_t filaSensores;
 // -------- TASK 1: Sensor (Temperatura e umidade) --------
 void taskTempUmidade(void *pvParameters)
 {
+
+    aht10_i2c_init();
+    aht10_init();
+
     while (1)
     {
-        temperatura = 20 + rand() % 10; // 20 a 29
-        umidade = 40 + rand() % 20;     // 40 a 59
+        float hum, temp;
+        aht10_trigger_measurement();
 
-        vTaskDelay(pdMS_TO_TICKS(1000)); // 1 segundo
+        if (aht10_read(&temp, &hum))
+        {
+            temperatura = temp;
+            humidade = hum;
+        }
+        else
+        {
+            temperatura = 20 + rand() % 10; // 20 a 29
+            humidade = 40 + rand() % 20;     // 40 a 59
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(5000));
     }
 }
 // -------- TASK 2: Sensor (Luminosidade) --------

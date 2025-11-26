@@ -39,7 +39,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(embarca-final embarca-final.c )
+add_executable(embarca-final embarca-final.c display.c inc/ssd1306_i2c.c)
 
 pico_set_program_name(embarca-final "embarca-final")
 pico_set_program_version(embarca-final "0.1")
@@ -47,6 +47,8 @@ pico_set_program_version(embarca-final "0.1")
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(embarca-final 0)
 pico_enable_stdio_usb(embarca-final 1)
+
+add_subdirectory(lib/AHT10)
 
 # Add the standard library to the build
 target_link_libraries(embarca-final
@@ -62,7 +64,8 @@ target_link_libraries(embarca-final
     FreeRTOS-Kernel 
     FreeRTOS-Kernel-Heap4
     pico_cyw43_arch_lwip_threadsafe_background  
+    hardware_i2c
+    AHT10
 )
 
 pico_add_extra_outputs(embarca-final)
-
