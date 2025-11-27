@@ -16,6 +16,7 @@
 #include "hardware/i2c.h"
 #include "aht10.h"
 #include "display.h"
+#include "bh1750.h"
 
 #define BUTTON1_PIN 5 // botão 1
 #define BUTTON2_PIN 6 // botão 2
@@ -33,6 +34,8 @@ float distancia = 0.0f;
 // ---------- WIFI TASK ----------
 #define WIFI_SSID "MAURO GUIDO"
 #define WIFI_PASS "1975mmpg"
+
+#define I2C_PORT i2c1
 
 volatile bool wifi_conectado = false; // outras tasks podem ler isso
 
@@ -196,7 +199,7 @@ void taskTempUmidade(void *pvParameters)
         else
         {
             temperatura = 20 + rand() % 10; // 20 a 29
-            humidade = 40 + rand() % 20;     // 40 a 59
+            humidade = 40 + rand() % 20;    // 40 a 59
         }
 
         vTaskDelay(pdMS_TO_TICKS(5000));
@@ -205,9 +208,13 @@ void taskTempUmidade(void *pvParameters)
 // -------- TASK 2: Sensor (Luminosidade) --------
 void taskLuminosidade(void *pvParameters)
 {
+    i2c_inst_t *i2c = bh1750_init(I2C_PORT);
+    float lux;
     while (1)
     {
-        luminosidade = rand() % 1000; // 0 a 999 lux
+
+        bh1750_read_lux(i2c, &lux);
+        luminosidade = lux;
 
         vTaskDelay(pdMS_TO_TICKS(200)); // 200ms
     }

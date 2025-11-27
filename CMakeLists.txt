@@ -39,7 +39,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(embarca-final embarca-final.c display.c inc/ssd1306_i2c.c)
+add_executable(embarca-final embarca-final.c display.c inc/ssd1306_i2c.c bh1750.c)
 
 pico_set_program_name(embarca-final "embarca-final")
 pico_set_program_version(embarca-final "0.1")
