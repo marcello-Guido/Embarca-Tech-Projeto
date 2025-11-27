@@ -39,7 +39,7 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(embarca-final embarca-final.c display.c inc/ssd1306_i2c.c bh1750.c)
+add_executable(embarca-final embarca-final.c display.c inc/ssd1306_i2c.c bh1750.c lib/vl53l0x/vl53l0x.c)
 
 pico_set_program_name(embarca-final "embarca-final")
 pico_set_program_version(embarca-final "0.1")
@@ -57,6 +57,8 @@ target_link_libraries(embarca-final
 # Add the standard include files to the build
 target_include_directories(embarca-final PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
+        ${CMAKE_CURRENT_LIST_DIR}/lib
+        ${CMAKE_CURRENT_LIST_DIR}/lib/vl53l0x
 )
 
 # Add any user requested libraries

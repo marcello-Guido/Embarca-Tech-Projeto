@@ -5,7 +5,7 @@
 #include "pico/stdlib.h"
 #include "hardware/i2c.h"
 
-// bh1750 I2C address, isto utilizando o I2C 0 da BitDogLab
+// bh1750 I2C address, isto utilizando o I2C 1 da BitDogLab
 #define I2C0_SDA_PIN 2
 #define I2C0_SCL_PIN 3
 
