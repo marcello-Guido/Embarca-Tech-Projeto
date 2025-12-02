@@ -3,13 +3,6 @@
 #include "hardware/i2c.h"
 #include "vl53l0x.h"
 
-int config_i2c() {
-    i2c_init(I2C_PORT, 100 * 1000); // Comunicação I2C a 100 kHz
-    gpio_set_function(SDA_PIN, GPIO_FUNC_I2C);
-    gpio_set_function(SCL_PIN, GPIO_FUNC_I2C);
-    gpio_pull_up(SDA_PIN);
-    gpio_pull_up(SCL_PIN);
-}
 
 // Inicializa o sensor VL53L0X
 // Retorna 1 em caso de sucesso, 0 em caso de falha

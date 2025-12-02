@@ -15,8 +15,8 @@
 // Sensores
 #include "hardware/i2c.h"
 #include "aht10.h"
-#include "display.h"
 #include "bh1750.h"
+#include "vl53l0x.h"
 
 #define BUTTON1_PIN 5 // botão 1
 #define BUTTON2_PIN 6 // botão 2
@@ -35,7 +35,14 @@ float distancia = 0.0f;
 #define WIFI_SSID "MAURO GUIDO"
 #define WIFI_PASS "1975mmpg"
 
-#define I2C_PORT i2c1
+#define I2C_PORT i2c0
+#define SDA_PIN 0
+#define SCL_PIN 1
+
+// Prototipos das funções I2C
+int i2c_write(uint8_t addr, const uint8_t *data, uint16_t len);
+int i2c_read(uint8_t addr, uint8_t *data, uint16_t len);
+void delay_ms(uint32_t ms);
 
 volatile bool wifi_conectado = false; // outras tasks podem ler isso
 
@@ -182,24 +189,31 @@ QueueHandle_t filaSensores;
 // -------- TASK 1: Sensor (Temperatura e umidade) --------
 void taskTempUmidade(void *pvParameters)
 {
+    AHT10_Handle aht10 = {
+        .iface = {
+            .i2c_write = i2c_write,
+            .i2c_read = i2c_read,
+            .delay_ms = delay_ms}};
 
-    aht10_i2c_init();
-    aht10_init();
+    // Inicializa o sensor AHT10
+    printf("Inicializando AHT10...\n");
+    if (!AHT10_Init(&aht10))
+    {
+        printf("Falha na inicialização do sensor!\n");
+        while (1)
+             vTaskDelay(pdMS_TO_TICKS(4000));
+    }
 
     while (1)
     {
-        float hum, temp;
-        aht10_trigger_measurement();
-
-        if (aht10_read(&temp, &hum))
+        float temp, hum;
+        if (AHT10_ReadTemperatureHumidity(&aht10, &temp, &hum))
         {
-            temperatura = temp;
-            humidade = hum;
+            printf("Temperatura: %.2f °C | Umidade: %.2f %%\n", temp, hum);
         }
         else
         {
-            temperatura = 20 + rand() % 10; // 20 a 29
-            humidade = 40 + rand() % 20;    // 40 a 59
+            printf("Falha na leitura dos dados!\n");
         }
 
         vTaskDelay(pdMS_TO_TICKS(5000));
@@ -208,24 +222,40 @@ void taskTempUmidade(void *pvParameters)
 // -------- TASK 2: Sensor (Luminosidade) --------
 void taskLuminosidade(void *pvParameters)
 {
-    i2c_inst_t *i2c = bh1750_init(I2C_PORT);
-    float lux;
+    bh1750_init(I2C_PORT);
+
     while (1)
     {
 
-        bh1750_read_lux(i2c, &lux);
-        luminosidade = lux;
+        float lux = bh1750_read_lux(I2C_PORT);
+        printf("Luminosidade: %.2f lux  |\n", lux);
 
-        vTaskDelay(pdMS_TO_TICKS(200)); // 200ms
+        vTaskDelay(pdMS_TO_TICKS(5000)); // 5s
     }
 }
 // -------- TASK 3: Sensor (Distancia) --------
 void taskDistancia(void *pvParameters)
 {
+    if (!vl53l0x_init(I2C_PORT))
+    {
+        printf("Falha ao inicializar o VL53L0X.\n");
+        while (true)
+        {
+            vTaskDelay(pdMS_TO_TICKS(1000)); 
+        }
+    }
     while (1)
     {
-        distancia = 30 + rand() % 200;  // 30 a 229 mm
-        vTaskDelay(pdMS_TO_TICKS(150)); // 150ms
+        int dis = vl53l0x_read_distance_mm(I2C_PORT);
+        if (dis < 0)
+        {
+            printf("Erro na leitura da distância.\n");
+        }
+        else
+        {
+            printf("Distância: %d mm (%.2f m)\n", dis, dis / 1000.0f);
+        }
+        vTaskDelay(pdMS_TO_TICKS(5000)); // 5s
     }
 }
 // -------- TASK 4: Wifi --------
@@ -295,7 +325,16 @@ void taskHttp(void *pvParameters)
 int main()
 {
     stdio_init_all();
-    sleep_ms(2000); // Para dar tempo da USB conectar
+
+    i2c_init(I2C_PORT, 100 * 1000); // 100 kHz
+    gpio_set_function(SDA_PIN, GPIO_FUNC_I2C);
+    gpio_set_function(SCL_PIN, GPIO_FUNC_I2C);
+    gpio_pull_up(SDA_PIN);
+    gpio_pull_up(SCL_PIN);
+    sleep_ms(200); // Para dar tempo da USB conectar
+
+    sleep_ms(100); // Aguarda estabilização do I2C
+
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
 
@@ -331,4 +370,23 @@ int main()
     while (1)
     {
     }
+}
+// Função para escrita I2C
+int i2c_write(uint8_t addr, const uint8_t *data, uint16_t len)
+{
+    int result = i2c_write_blocking(I2C_PORT, addr, data, len, false);
+    return result < 0 ? -1 : 0;
+}
+
+// Função para leitura I2C
+int i2c_read(uint8_t addr, uint8_t *data, uint16_t len)
+{
+    int result = i2c_read_blocking(I2C_PORT, addr, data, len, false);
+    return result < 0 ? -1 : 0;
+}
+
+// Função para delay
+void delay_ms(uint32_t ms)
+{
+    sleep_ms(ms);
 }

@@ -1,11 +1,6 @@
 #ifndef VL53L0X_h
 #define VL53L0X_h
 
-// Definições de I2C
-#define I2C_PORT i2c1
-#define SDA_PIN 2
-#define SCL_PIN 3
-
 #define VL53L0X_ADDR 0x29
 
 // Lista de endereços de registradores

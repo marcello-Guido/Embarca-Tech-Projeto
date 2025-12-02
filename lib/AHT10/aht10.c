@@ -1,44 +1,60 @@
 #include "aht10.h"
 
-void aht10_i2c_init(){
-    i2c_init(i2c0, 400 * 1000); // 400kHz
-    gpio_set_function(AHT10_I2C_SDA_PIN, GPIO_FUNC_I2C);
-    gpio_set_function(AHT10_I2C_SCL_PIN, GPIO_FUNC_I2C);
-    gpio_pull_up(AHT10_I2C_SDA_PIN);
-    gpio_pull_up(AHT10_I2C_SCL_PIN);
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+// código do header...
+
+#ifdef __cplusplus
+}
+#endif
+
+
+static bool aht10_write_command(AHT10_Handle *dev, uint8_t cmd, uint8_t arg1, uint8_t arg2) {
+    uint8_t buf[3] = { cmd, arg1, arg2 };
+    return dev->iface.i2c_write(AHT10_I2C_ADDRESS, buf, 3) == 0;
 }
 
-void aht10_init() {
-    // Esta linha prepara o comando de inicialização para o AHT10
-    uint8_t cmd[] = {0xBE, 0x08, 0x00};
-    i2c_write_blocking(AHT10_I2C_PORT, AHT10_ADDR, cmd, 3, false);
-    sleep_ms(50); // aumente o tempo de espera para garantir a inicialização
+bool AHT10_Init(AHT10_Handle *dev) {
+    if (!dev) return false;
+    if (!AHT10_SoftReset(dev)) return false;
+    dev->iface.delay_ms(20);
+    dev->initialized = aht10_write_command(dev, AHT10_CMD_INITIALIZE, 0x08, 0x00);
+    dev->iface.delay_ms(10);
+    return dev->initialized;
 }
 
-void aht10_trigger_measurement() {
-    // Esta linha prepara o comando para iniciar uma medição no AHT10
-    uint8_t cmd[] = {0xAC, 0x33, 0x00};
-    i2c_write_blocking(AHT10_I2C_PORT, AHT10_ADDR, cmd, 3, false);
-    sleep_ms(80); // tempo de espera da medição
+bool AHT10_SoftReset(AHT10_Handle *dev) {
+    if (!dev) return false;
+    uint8_t cmd = AHT10_CMD_RESET;
+    bool ok = dev->iface.i2c_write(AHT10_I2C_ADDRESS, &cmd, 1) == 0;
+    dev->iface.delay_ms(20);
+    return ok;
 }
 
-bool aht10_read(float *temperature, float *humidity) {
-    // Esta linha lê 6 bytes de dados do sensor AHT10 via I2C e armazena no array 'data'
-    uint8_t data[6];
-    int res = i2c_read_blocking(AHT10_I2C_PORT, AHT10_ADDR, data, 6, false);
-    if (res != 6) return false;
+bool AHT10_IsBusy(AHT10_Handle *dev) {
+    uint8_t status = 0;
+    if (dev->iface.i2c_read(AHT10_I2C_ADDRESS, &status, 1) != 0) return true;
+    return (status & 0x80) != 0;
+}
 
-    // Checa se o sensor ainda está ocupado (bit 7 do primeiro byte)
-    if (data[0] & 0x80) {
-        // Sensor ainda está processando, leitura inválida
-        return false;
-    }
+bool AHT10_ReadTemperatureHumidity(AHT10_Handle *dev, float *temperature, float *humidity) {
+    if (!dev || !dev->initialized) return false;
 
-    uint32_t hum_raw = ((uint32_t)data[1] << 12) | ((uint32_t)data[2] << 4) | ((data[3] >> 4) & 0x0F);
-    uint32_t temp_raw = (((uint32_t)data[3] & 0x0F) << 16) | ((uint32_t)data[4] << 8) | data[5];
+    if (!aht10_write_command(dev, AHT10_CMD_MEASURE, 0x33, 0x00)) return false;
+    dev->iface.delay_ms(80);
 
-    // Cálculo conforme datasheet do AHT10
-    *humidity = ((float)hum_raw / 1048576.0f) * 100.0f;
-    *temperature = ((float)temp_raw / 1048576.0f) * 200.0f - 50.0f;
+    uint8_t raw[6];
+    if (dev->iface.i2c_read(AHT10_I2C_ADDRESS, raw, 6) != 0) return false;
+
+    if ((raw[0] & 0x80) != 0) return false; // ainda ocupado
+
+    uint32_t raw_hum = ((uint32_t)(raw[1]) << 12) | ((uint32_t)(raw[2]) << 4) | (raw[3] >> 4);
+    uint32_t raw_temp = (((uint32_t)(raw[3] & 0x0F)) << 16) | ((uint32_t)(raw[4]) << 8) | raw[5];
+
+    *humidity = (raw_hum * 100.0f) / 1048576.0f;
+    *temperature = ((raw_temp * 200.0f) / 1048576.0f) - 50.0f;
+
     return true;
 }

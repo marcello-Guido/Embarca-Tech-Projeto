@@ -39,7 +39,12 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(embarca-final embarca-final.c display.c inc/ssd1306_i2c.c bh1750.c lib/vl53l0x/vl53l0x.c)
+add_executable(embarca-final 
+        embarca-final.c 
+        lib/AHT10/aht10.c
+        lib/BH1750/bh1750.c
+        lib/VL53L0X/vl53l0x.c
+        )
 
 pico_set_program_name(embarca-final "embarca-final")
 pico_set_program_version(embarca-final "0.1")
@@ -57,8 +62,9 @@ target_link_libraries(embarca-final
 # Add the standard include files to the build
 target_include_directories(embarca-final PRIVATE
         ${CMAKE_CURRENT_LIST_DIR}
-        ${CMAKE_CURRENT_LIST_DIR}/lib
-        ${CMAKE_CURRENT_LIST_DIR}/lib/vl53l0x
+        ${CMAKE_CURRENT_LIST_DIR}/lib/AHT10
+        ${CMAKE_CURRENT_LIST_DIR}/lib/BH1750
+        ${CMAKE_CURRENT_LIST_DIR}/lib/VL53L0X
 )
 
 # Add any user requested libraries
@@ -67,7 +73,6 @@ target_link_libraries(embarca-final
     FreeRTOS-Kernel-Heap4
     pico_cyw43_arch_lwip_threadsafe_background  
     hardware_i2c
-    AHT10
 )
 
 pico_add_extra_outputs(embarca-final)
