@@ -209,14 +209,15 @@ void taskTempUmidade(void *pvParameters)
         float temp, hum;
         if (AHT10_ReadTemperatureHumidity(&aht10, &temp, &hum))
         {
-            printf("Temperatura: %.2f °C | Umidade: %.2f %%\n", temp, hum);
+            temperatura = temp;
+            humidade = hum;
         }
         else
         {
             printf("Falha na leitura dos dados!\n");
         }
 
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        vTaskDelay(pdMS_TO_TICKS(4000));
     }
 }
 // -------- TASK 2: Sensor (Luminosidade) --------
@@ -228,9 +229,9 @@ void taskLuminosidade(void *pvParameters)
     {
 
         float lux = bh1750_read_lux(I2C_PORT);
-        printf("Luminosidade: %.2f lux  |\n", lux);
+        luminosidade = lux;
 
-        vTaskDelay(pdMS_TO_TICKS(5000)); // 5s
+        vTaskDelay(pdMS_TO_TICKS(4000)); // 2s
     }
 }
 // -------- TASK 3: Sensor (Distancia) --------
@@ -253,9 +254,9 @@ void taskDistancia(void *pvParameters)
         }
         else
         {
-            printf("Distância: %d mm (%.2f m)\n", dis, dis / 1000.0f);
+           distancia = dis;
         }
-        vTaskDelay(pdMS_TO_TICKS(5000)); // 5s
+        vTaskDelay(pdMS_TO_TICKS(1000)); // 500ms
     }
 }
 // -------- TASK 4: Wifi --------
