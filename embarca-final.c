@@ -22,6 +22,19 @@
 #define BUTTON2_PIN 6 // botão 2
 #define LED_PIN 12    // sensor
 
+/* Escala de luminosidade: 0–1000 lux → 0–100%
+   < 50 lux = escuro | 50–300 lux = média | > 300 lux = claro | 1000 lux = luz intensa */
+#define LUX_MIN   0.0f
+#define LUX_MAX   1000.0f
+
+/** Converte lux em porcentagem (0–100%). Escala: 0 lux = 0%, 1000 lux = 100%. */
+static float lux_to_percent(float lux)
+{
+    if (lux <= 0.0f) return 0.0f;
+    if (lux >= LUX_MAX) return 100.0f;
+    return (lux / LUX_MAX) * 100.0f;
+}
+
 char button1[50] = "Nenhum evento";
 char button2[50] = "Nenhum evento";
 char ip_str[20] = "---";
@@ -53,6 +66,7 @@ void create_http_response()
     bool led_on = gpio_get(LED_PIN);
     const char *led_class = led_on ? "ok" : "off";
     const char *led_txt = led_on ? "Ligada" : "Desligada";
+    float luminosidade_pct = lux_to_percent(luminosidade);
 
     snprintf(http_response, sizeof(http_response),
              "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n"
@@ -73,7 +87,7 @@ void create_http_response()
              "<section><h2>Dados dos Sensores</h2><div class=\"grid\">"
              "<div class=\"card\"><div>Temperatura</div><div class=\"v\">%.2f</div><div class=\"u\">&deg;C</div></div>"
              "<div class=\"card\"><div>Umidade</div><div class=\"v\">%.2f</div><div class=\"u\">%%</div></div>"
-             "<div class=\"card\"><div>Luminosidade</div><div class=\"v\">%.0f</div><div class=\"u\">lux</div></div>"
+             "<div class=\"card\"><div>Luminosidade</div><div class=\"v\">%.1f</div><div class=\"u\">%% (%.0f lux)</div></div>"
              "<div class=\"card\"><div>Distancia</div><div class=\"v\">%.0f</div><div class=\"u\">mm</div></div>"
              "</div></section>"
              "<section><h2>Status do Sistema</h2>"
@@ -85,7 +99,7 @@ void create_http_response()
              "<p><strong>WiFi:</strong> <span class=\"ok\">Conectado</span></p><p><strong>IP:</strong> %s</p></div></section>"
              "<p class=\"atual\">Atualizacao automatica a cada 2 s</p>"
              "</body></html>\r\n",
-             temperatura, humidade, luminosidade, distancia,
+             temperatura, humidade, luminosidade_pct, luminosidade, distancia,
              led_class, led_txt, button1, button2, ip_str);
 }
 
