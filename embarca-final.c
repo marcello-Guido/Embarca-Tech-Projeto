@@ -18,17 +18,14 @@
 #include "bh1750.h"
 #include "vl53l0x.h"
 
-#define BUTTON1_PIN 5  // botão 1
-#define BUTTON2_PIN 6  // botão 2
-#define BUZZER_PIN 15 // buzzer — acionado ao apertar qualquer botão (não acende LED azul)
-// LED RGB: R=13, G=14, B=12 (azul = controle web e temp < 20 °C)
-#define LED_PIN 12           // LED azul do RGB — controle manual (web) e temp < 20 °C
-#define LED_RGB_RED_PIN 13   // canal vermelho — temperatura >= 26 °C
-#define LED_RGB_GREEN_PIN 14 // canal verde — amarelo = R+G (20 a 26 °C)
+#define BUTTON1_PIN 5 // botão 1
+#define BUTTON2_PIN 6 // botão 2
+#define LED_PIN 12    // sensor
 
 char button1[50] = "Nenhum evento";
 char button2[50] = "Nenhum evento";
-char http_response[4096];
+char ip_str[20] = "---";
+char http_response[5120]; /* Buffer maior para página HTML completa */
 
 float temperatura = 0.0f;
 float humidade = 0.0f;
@@ -50,63 +47,46 @@ void delay_ms(uint32_t ms);
 
 volatile bool wifi_conectado = false; // outras tasks podem ler isso
 
-// Resposta http com HTML + CSS integrado
+// Resposta http – página aprimorada com seções e atualização dinâmica
 void create_http_response()
 {
-    char temp_alert[320];
-    if (temperatura >= 26.0f)
-    {
-        snprintf(temp_alert, sizeof(temp_alert),
-                 "<div class=\"alert\"><strong>Temperatura alta!</strong> Ative o ar condicionado a 20°C para resfriar o ambiente.</div>");
-    }
-    else
-    {
-        temp_alert[0] = '\0';
-    }
+    bool led_on = gpio_get(LED_PIN);
+    const char *led_class = led_on ? "ok" : "off";
+    const char *led_txt = led_on ? "Ligada" : "Desligada";
 
     snprintf(http_response, sizeof(http_response),
              "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n"
-             "<!DOCTYPE html><html lang=\"pt-BR\">"
-             "<head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-             "<title>Embarca - Controle e Sensores</title>"
+             "<!DOCTYPE html><html><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+             "<title>Sistema Embarcado - Monitoramento</title>"
              "<style>"
-             "*{box-sizing:border-box;margin:0;padding:0}"
-             "body{font-family:'Segoe UI',system-ui,sans-serif;background:linear-gradient(135deg,#1a1a2e 0%%,#16213e 100%%);min-height:100vh;color:#eee;padding:1.5rem}"
-             "h1{text-align:center;margin-bottom:1.5rem;font-size:1.5rem;color:#00d9ff}"
-             ".alert{background:rgba(220,38,38,.2);border:1px solid #dc2626;border-radius:8px;padding:.75rem 1rem;margin-bottom:1rem;color:#fecaca;font-size:.9rem}"
-             ".card{background:rgba(255,255,255,.08);border-radius:12px;padding:1rem 1.25rem;margin-bottom:1rem;border:1px solid rgba(255,255,255,.1)}"
-             ".card h2{font-size:.9rem;margin-bottom:.75rem;color:#7dd3fc;font-weight:600}"
-             ".card p{font-size:.85rem;margin:.35rem 0}"
-             ".btn-wrap{display:flex;gap:.75rem;flex-wrap:wrap;margin-top:.5rem}"
-             "a{display:inline-block;padding:.5rem 1rem;border-radius:8px;text-decoration:none;font-weight:600;font-size:.85rem;transition:transform .15s,box-shadow .15s}"
-             "a:active{transform:scale(.97)}"
-             "a.led-on{background:#22c55e;color:#fff}"
-             "a.led-on:hover{box-shadow:0 0 12px rgba(34,197,94,.5)}"
-             "a.led-off{background:#ef4444;color:#fff}"
-             "a.led-off:hover{box-shadow:0 0 12px rgba(239,68,68,.5)}"
-             ".valor{color:#a5f3fc;font-weight:600}"
-             ".footer{text-align:center;margin-top:1.5rem;font-size:.75rem;color:#64748b}"
-             "</style>"
-             "<script>setInterval(()=>location.reload(),1000);</script>"
-             "</head><body>"
-             "<h1>Embarca - Controle e Sensores</h1>"
-             "%s"
-             "<div class=\"card\"><h2>Controle do LED</h2>"
-             "<div class=\"btn-wrap\">"
-             "<a href=\"/led/on\" class=\"led-on\">Ligar LED</a>"
-             "<a href=\"/led/off\" class=\"led-off\">Desligar LED</a>"
-             "</div></div>"
-             "<div class=\"card\"><h2>Estado dos Botões</h2>"
-             "<p>Botão 1: <span class=\"valor\">%s</span></p>"
-             "<p>Botão 2: <span class=\"valor\">%s</span></p></div>"
-             "<div class=\"card\"><h2>Sensores</h2>"
-             "<p>Temperatura: <span class=\"valor\">%.2f °C</span></p>"
-             "<p>Umidade: <span class=\"valor\">%.2f %%</span></p>"
-             "<p>Luminosidade: <span class=\"valor\">%.0f lux</span></p>"
-             "<p>Distância: <span class=\"valor\">%.0f mm</span></p></div>"
-             "<p class=\"footer\">Atualização automática a cada 1s • Pico W + FreeRTOS</p>"
+             "*{box-sizing:border-box}body{font-family:system-ui,sans-serif;margin:0;padding:16px;background:#1a1a2e;color:#eee}"
+             "h1{text-align:center;color:#0f3460;margin-bottom:8px}h2{color:#e94560;border-bottom:1px solid #e94560;padding-bottom:6px;margin-top:20px}"
+             ".grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}"
+             ".card{background:#16213e;border-radius:8px;padding:14px;text-align:center}.card div:first-child{font-size:0.9rem;color:#aaa;margin-bottom:4px}"
+             ".card .v{font-size:1.5rem;font-weight:bold;color:#0f3460}.card .u{font-size:0.8rem;color:#888}"
+             "section{margin:18px 0}.ok{color:#4ade80}.off{color:#f87171}"
+             ".conn{background:#16213e;padding:14px;border-radius:8px}.acoes{margin-top:10px}"
+             ".acoes a{display:inline-block;margin:4px;padding:10px 18px;background:#e94560;color:#fff;text-decoration:none;border-radius:6px;font-weight:500}"
+             ".acoes a:hover{background:#c73e54}.atual{text-align:center;font-size:0.8rem;color:#666;margin-top:20px}"
+             "</style><script>setInterval(function(){location.reload();},2000);</script></head><body>"
+             "<h1>Sistema Embarcado - Monitoramento</h1>"
+             "<section><h2>Dados dos Sensores</h2><div class=\"grid\">"
+             "<div class=\"card\"><div>Temperatura</div><div class=\"v\">%.2f</div><div class=\"u\">&deg;C</div></div>"
+             "<div class=\"card\"><div>Umidade</div><div class=\"v\">%.2f</div><div class=\"u\">%%</div></div>"
+             "<div class=\"card\"><div>Luminosidade</div><div class=\"v\">%.0f</div><div class=\"u\">lux</div></div>"
+             "<div class=\"card\"><div>Distancia</div><div class=\"v\">%.0f</div><div class=\"u\">mm</div></div>"
+             "</div></section>"
+             "<section><h2>Status do Sistema</h2>"
+             "<p><strong>Iluminacao:</strong> <span class=\"%s\">%s</span></p>"
+             "<p><strong>Modo controle:</strong> Manual (automático por luminosidade: em expansão)</p>"
+             "<p><strong>Botao 1:</strong> %s</p><p><strong>Botao 2:</strong> %s</p>"
+             "<div class=\"acoes\"><a href=\"/led/on\">Ligar LED</a> <a href=\"/led/off\">Desligar LED</a></div></section>"
+             "<section><h2>Conectividade</h2><div class=\"conn\">"
+             "<p><strong>WiFi:</strong> <span class=\"ok\">Conectado</span></p><p><strong>IP:</strong> %s</p></div></section>"
+             "<p class=\"atual\">Atualizacao automatica a cada 2 s</p>"
              "</body></html>\r\n",
-             temp_alert, button1, button2, temperatura, humidade, luminosidade, distancia);
+             temperatura, humidade, luminosidade, distancia,
+             led_class, led_txt, button1, button2, ip_str);
 }
 
 static err_t http_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
@@ -207,31 +187,6 @@ void buttons()
             printf("Botão 2 solto\n");
         }
     }
-    // Ao apertar qualquer botão: buzzer ligado; ao soltar todos: buzzer desligado (não acende LED azul)
-    gpio_put(BUZZER_PIN, button1_state || button2_state);
-}
-
-// Atualiza LED RGB por temperatura: >=26 vermelho, <20 azul (pino 12), 20–26 amarelo (R+G)
-void atualiza_leds_temperatura(void)
-{
-    if (temperatura >= 26.0f)
-    {
-        gpio_put(LED_RGB_RED_PIN, 1);
-        gpio_put(LED_RGB_GREEN_PIN, 0);
-        gpio_put(LED_PIN, 0); // azul
-    }
-    else if (temperatura < 20.0f)
-    {
-        gpio_put(LED_RGB_RED_PIN, 0);
-        gpio_put(LED_RGB_GREEN_PIN, 0);
-        gpio_put(LED_PIN, 1); // azul (mesmo pino do controle web)
-    }
-    else
-    {
-        gpio_put(LED_RGB_RED_PIN, 1);
-        gpio_put(LED_RGB_GREEN_PIN, 1);
-        gpio_put(LED_PIN, 0); // amarelo = vermelho + verde
-    }
 }
 
 // Fila global
@@ -260,15 +215,16 @@ void taskTempUmidade(void *pvParameters)
         float temp, hum;
         if (AHT10_ReadTemperatureHumidity(&aht10, &temp, &hum))
         {
+            printf("Temperatura: %.2f °C | Umidade: %.2f %%\n", temp, hum);
             temperatura = temp;
             humidade = hum;
-            atualiza_leds_temperatura();
         }
         else
         {
             printf("Falha na leitura dos dados!\n");
         }
 
+        vTaskDelay(pdMS_TO_TICKS(5000));
         vTaskDelay(pdMS_TO_TICKS(4000));
     }
 }
@@ -281,8 +237,10 @@ void taskLuminosidade(void *pvParameters)
     {
 
         float lux = bh1750_read_lux(I2C_PORT);
+        printf("Luminosidade: %.2f lux  |\n", lux);
         luminosidade = lux;
 
+        vTaskDelay(pdMS_TO_TICKS(5000)); // 5s
         vTaskDelay(pdMS_TO_TICKS(4000)); // 2s
     }
 }
@@ -306,8 +264,10 @@ void taskDistancia(void *pvParameters)
         }
         else
         {
+            printf("Distância: %d mm (%.2f m)\n", dis, dis / 1000.0f);
            distancia = dis;
         }
+        vTaskDelay(pdMS_TO_TICKS(5000)); // 5s
         vTaskDelay(pdMS_TO_TICKS(1000)); // 500ms
     }
 }
@@ -315,6 +275,7 @@ void taskDistancia(void *pvParameters)
 void taskWifi(void *pvParameters)
 {
     printf("[WiFi] Inicializando módulo CYW43...\n");
+
     if (cyw43_arch_init())
     {
         printf("[WiFi] ERRO: falha ao inicializar CYW43!\n");
@@ -323,23 +284,27 @@ void taskWifi(void *pvParameters)
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
+
     cyw43_arch_enable_sta_mode();
 
     while (1)
     {
         printf("[WiFi] Conectando a %s...\n", WIFI_SSID);
+
         int result = cyw43_arch_wifi_connect_timeout_ms(
             WIFI_SSID,
             WIFI_PASS,
             CYW43_AUTH_WPA2_AES_PSK,
             10000 // timeout 10s
         );
+
         if (result == 0)
         {
             wifi_conectado = true;
             printf("[WiFi] Conectado com sucesso! 🎉\n");
             uint8_t *ip_address = (uint8_t *)&(cyw43_state.netif[0].ip_addr.addr);
-            printf("Endereço IP %d.%d.%d.%d\n", ip_address[0], ip_address[1], ip_address[2], ip_address[3]);
+            snprintf(ip_str, sizeof(ip_str), "%d.%d.%d.%d", ip_address[0], ip_address[1], ip_address[2], ip_address[3]);
+            printf("Endereço IP %s\n", ip_str);
             // Mantém a task viva e monitorando
             while (wifi_conectado)
             {
@@ -386,14 +351,6 @@ int main()
 
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
-    gpio_init(LED_RGB_RED_PIN);
-    gpio_set_dir(LED_RGB_RED_PIN, GPIO_OUT);
-    gpio_init(LED_RGB_GREEN_PIN);
-    gpio_set_dir(LED_RGB_GREEN_PIN, GPIO_OUT);
-
-    gpio_init(BUZZER_PIN);
-    gpio_set_dir(BUZZER_PIN, GPIO_OUT);
-    gpio_put(BUZZER_PIN, 0);
 
     gpio_init(BUTTON1_PIN);
     gpio_set_dir(BUTTON1_PIN, GPIO_IN);
