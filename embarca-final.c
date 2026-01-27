@@ -18,9 +18,11 @@
 #include "bh1750.h"
 #include "vl53l0x.h"
 
-#define BUTTON1_PIN 5 // botão 1
-#define BUTTON2_PIN 6 // botão 2
-#define LED_PIN 12    // sensor
+#define BUTTON1_PIN 5  // botão 1
+#define BUTTON2_PIN 6  // botão 2
+#define LED_PIN 12     // sensor
+#define LED_RGB_RED_PIN 13  // LED vermelho do RGB – acionado se temp > 28 °C
+#define TEMP_ALERT_CELSIUS 28.0f
 
 /* Escala de luminosidade: 0–1000 lux → 0–100%
    < 50 lux = escuro | 50–300 lux = média | > 300 lux = claro | 1000 lux = luz intensa */
@@ -117,11 +119,11 @@ static err_t http_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_
 
     if (strstr(request, "GET /led/on"))
     {
-        gpio_put(LED_PIN, 1); // Liga o LED
+        /* Futuro: acionar buzzer – LED não é mais controlado por aqui */
     }
     else if (strstr(request, "GET /led/off"))
     {
-        gpio_put(LED_PIN, 0); // Desliga o LED
+        /* Futuro: desligar buzzer */
     }
 
     // Atualiza o conteúdo da página com base no estado dos botões
@@ -232,6 +234,8 @@ void taskTempUmidade(void *pvParameters)
             printf("Temperatura: %.2f °C | Umidade: %.2f %%\n", temp, hum);
             temperatura = temp;
             humidade = hum;
+            /* Temperatura > 28 °C: aciona LED vermelho do RGB (GPIO 13) */
+            gpio_put(LED_RGB_RED_PIN, (temp > TEMP_ALERT_CELSIUS) ? 1 : 0);
         }
         else
         {
@@ -365,6 +369,10 @@ int main()
 
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
+
+    gpio_init(LED_RGB_RED_PIN);
+    gpio_set_dir(LED_RGB_RED_PIN, GPIO_OUT);
+    gpio_put(LED_RGB_RED_PIN, 0);  /* inicia apagado */
 
     gpio_init(BUTTON1_PIN);
     gpio_set_dir(BUTTON1_PIN, GPIO_IN);
