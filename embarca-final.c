@@ -20,9 +20,17 @@
 
 #define BUTTON1_PIN 5  // botão 1
 #define BUTTON2_PIN 6  // botão 2
-#define LED_PIN 12     // sensor
-#define LED_RGB_RED_PIN 13  // LED vermelho do RGB – acionado se temp > 28 °C
+#define LED_PIN 12     // sensor (mesmo pino do LED azul RGB)
+#define LED_RGB_GREEN_PIN 11  // LED verde do RGB – acionado se temp <= 26 °C
+#define LED_RGB_BLUE_PIN 12   // LED azul do RGB – acionado se 26 < temp <= 28 °C
+#define LED_RGB_RED_PIN 13    // LED vermelho do RGB – acionado se temp > 28 °C
+#define TEMP_GREEN_MAX_CELSIUS 26.0f
+#define TEMP_BLUE_MIN_CELSIUS 26.0f
+#define TEMP_BLUE_MAX_CELSIUS 28.0f
 #define TEMP_ALERT_CELSIUS 28.0f
+
+/* VL53L0X – movimento = variação de distância >= 300 mm */
+#define MOVIMENTO_THRESHOLD_MM 300
 
 /* Escala de luminosidade: 0–1000 lux → 0–100%
    < 50 lux = escuro | 50–300 lux = média | > 300 lux = claro | 1000 lux = luz intensa */
@@ -46,6 +54,7 @@ float temperatura = 0.0f;
 float humidade = 0.0f;
 float luminosidade = 0.0f;
 float distancia = 0.0f;
+volatile bool movimento_detectado = false;  /* VL53L0X: variação >= 300 mm */
 
 // ---------- WIFI TASK ----------
 #define WIFI_SSID "MAURO GUIDO"
@@ -81,11 +90,13 @@ void create_http_response()
              ".card{background:#16213e;border-radius:8px;padding:14px;text-align:center}.card div:first-child{font-size:0.9rem;color:#aaa;margin-bottom:4px}"
              ".card .v{font-size:1.5rem;font-weight:bold;color:#0f3460}.card .u{font-size:0.8rem;color:#888}"
              "section{margin:18px 0}.ok{color:#4ade80}.off{color:#f87171}"
+             ".alerta-movimento{background:#7f1d1d;color:#fecaca;padding:12px 16px;border-radius:8px;margin:12px 0;font-weight:bold;text-align:center;border:1px solid #b91c1c}"
              ".conn{background:#16213e;padding:14px;border-radius:8px}.acoes{margin-top:10px}"
              ".acoes a{display:inline-block;margin:4px;padding:10px 18px;background:#e94560;color:#fff;text-decoration:none;border-radius:6px;font-weight:500}"
              ".acoes a:hover{background:#c73e54}.atual{text-align:center;font-size:0.8rem;color:#666;margin-top:20px}"
              "</style><script>setInterval(function(){location.reload();},2000);</script></head><body>"
              "<h1>Sistema Embarcado - Monitoramento</h1>"
+             "%s"
              "<section><h2>Dados dos Sensores</h2><div class=\"grid\">"
              "<div class=\"card\"><div>Temperatura</div><div class=\"v\">%.2f</div><div class=\"u\">&deg;C</div></div>"
              "<div class=\"card\"><div>Umidade</div><div class=\"v\">%.2f</div><div class=\"u\">%%</div></div>"
@@ -101,6 +112,7 @@ void create_http_response()
              "<p><strong>WiFi:</strong> <span class=\"ok\">Conectado</span></p><p><strong>IP:</strong> %s</p></div></section>"
              "<p class=\"atual\">Atualizacao automatica a cada 2 s</p>"
              "</body></html>\r\n",
+             movimento_detectado ? "<div class=\"alerta-movimento\">Movimento detectado pelo sensor VL53L0X!</div>" : "",
              temperatura, humidade, luminosidade_pct, luminosidade, distancia,
              led_class, led_txt, button1, button2, ip_str);
 }
@@ -234,7 +246,9 @@ void taskTempUmidade(void *pvParameters)
             printf("Temperatura: %.2f °C | Umidade: %.2f %%\n", temp, hum);
             temperatura = temp;
             humidade = hum;
-            /* Temperatura > 28 °C: aciona LED vermelho do RGB (GPIO 13) */
+            /* temp <= 26 °C: LED verde (GPIO 11); 26 < temp <= 28 °C: azul (12); temp > 28 °C: vermelho (13) */
+            gpio_put(LED_RGB_GREEN_PIN, (temp <= TEMP_GREEN_MAX_CELSIUS) ? 1 : 0);
+            gpio_put(LED_RGB_BLUE_PIN, (temp > TEMP_BLUE_MIN_CELSIUS && temp <= TEMP_BLUE_MAX_CELSIUS) ? 1 : 0);
             gpio_put(LED_RGB_RED_PIN, (temp > TEMP_ALERT_CELSIUS) ? 1 : 0);
         }
         else
@@ -265,6 +279,8 @@ void taskLuminosidade(void *pvParameters)
 // -------- TASK 3: Sensor (Distancia) --------
 void taskDistancia(void *pvParameters)
 {
+    static int dist_anterior_mm = -1;
+
     if (!vl53l0x_init(I2C_PORT))
     {
         printf("Falha ao inicializar o VL53L0X.\n");
@@ -283,7 +299,16 @@ void taskDistancia(void *pvParameters)
         else
         {
             printf("Distância: %d mm (%.2f m)\n", dis, dis / 1000.0f);
-           distancia = dis;
+            distancia = dis;
+
+            /* Movimento = variação de distância >= 300 mm em relação à leitura anterior */
+            if (dist_anterior_mm >= 0)
+            {
+                int delta = dis - dist_anterior_mm;
+                if (delta < 0) delta = -delta;
+                movimento_detectado = (delta >= MOVIMENTO_THRESHOLD_MM);
+            }
+            dist_anterior_mm = dis;
         }
         vTaskDelay(pdMS_TO_TICKS(5000)); // 5s
         vTaskDelay(pdMS_TO_TICKS(1000)); // 500ms
@@ -367,8 +392,14 @@ int main()
 
     sleep_ms(100); // Aguarda estabilização do I2C
 
-    gpio_init(LED_PIN);
-    gpio_set_dir(LED_PIN, GPIO_OUT);
+    /* LED azul RGB (GPIO 12) = LED_PIN – usado também como “Iluminação” na página web */
+    gpio_init(LED_RGB_BLUE_PIN);
+    gpio_set_dir(LED_RGB_BLUE_PIN, GPIO_OUT);
+    gpio_put(LED_RGB_BLUE_PIN, 0);  /* inicia apagado */
+
+    gpio_init(LED_RGB_GREEN_PIN);
+    gpio_set_dir(LED_RGB_GREEN_PIN, GPIO_OUT);
+    gpio_put(LED_RGB_GREEN_PIN, 0);  /* inicia apagado */
 
     gpio_init(LED_RGB_RED_PIN);
     gpio_set_dir(LED_RGB_RED_PIN, GPIO_OUT);
