@@ -74,9 +74,6 @@ volatile bool wifi_conectado = false; // outras tasks podem ler isso
 // Resposta http – página aprimorada com seções e atualização dinâmica
 void create_http_response()
 {
-    bool led_on = gpio_get(LED_PIN);
-    const char *led_class = led_on ? "ok" : "off";
-    const char *led_txt = led_on ? "Ligada" : "Desligada";
     float luminosidade_pct = lux_to_percent(luminosidade);
 
     snprintf(http_response, sizeof(http_response),
@@ -104,8 +101,6 @@ void create_http_response()
              "<div class=\"card\"><div>Distancia</div><div class=\"v\">%.0f</div><div class=\"u\">mm</div></div>"
              "</div></section>"
              "<section><h2>Status do Sistema</h2>"
-             "<p><strong>Iluminacao:</strong> <span class=\"%s\">%s</span></p>"
-             "<p><strong>Modo controle:</strong> Manual (automático por luminosidade: em expansão)</p>"
              "<p><strong>Botao 1:</strong> %s</p><p><strong>Botao 2:</strong> %s</p>"
              "<div class=\"acoes\"><a href=\"/led/on\">Ligar LED</a> <a href=\"/led/off\">Desligar LED</a></div></section>"
              "<section><h2>Conectividade</h2><div class=\"conn\">"
@@ -114,7 +109,7 @@ void create_http_response()
              "</body></html>\r\n",
              movimento_detectado ? "<div class=\"alerta-movimento\">Movimento detectado pelo sensor VL53L0X!</div>" : "",
              temperatura, humidade, luminosidade_pct, luminosidade, distancia,
-             led_class, led_txt, button1, button2, ip_str);
+             button1, button2, ip_str);
 }
 
 static err_t http_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
