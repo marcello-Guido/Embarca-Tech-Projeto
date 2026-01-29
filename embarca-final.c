@@ -115,16 +115,37 @@ void set_buzzer_frequency(uint pin, uint freq)
 // Definição de uma função para emitir um beep com duração especificada
 void ativarBeep(uint pin)
 {
+    uint slice = pwm_gpio_to_slice_num(pin);
+
     beep_ativo = true;
-    pwm_set_enabled(pwm_gpio_to_slice_num(pin), true);
+
+    // Volta o pino para PWM
+    gpio_set_function(pin, GPIO_FUNC_PWM);
+
+    pwm_set_enabled(slice, true);
 }
 
 void desativarBeep(uint pin)
 {
+    uint slice = pwm_gpio_to_slice_num(pin);
+
     beep_ativo = false;
+
+    // Zera duty
     pwm_set_gpio_level(pin, 0);
-    pwm_set_enabled(pwm_gpio_to_slice_num(pin), false);
+
+    // Desliga completamente o PWM
+    pwm_set_enabled(slice, false);
+
+    // TIRA o pino do modo PWM
+    gpio_set_function(pin, GPIO_FUNC_SIO);
+
+    // Força nível baixo (silêncio total)
+    gpio_set_dir(pin, GPIO_OUT);
+    gpio_put(pin, 0);
 }
+
+
 // Resposta http – página aprimorada com seções e atualização dinâmica
 void create_http_response()
 {
@@ -145,7 +166,7 @@ void create_http_response()
              ".conn{background:#16213e;padding:14px;border-radius:8px}.acoes{margin-top:10px}"
              ".acoes a{display:inline-block;margin:4px;padding:10px 18px;background:#e94560;color:#fff;text-decoration:none;border-radius:6px;font-weight:500}"
              ".acoes a:hover{background:#c73e54}.atual{text-align:center;font-size:0.8rem;color:#666;margin-top:20px}"
-             "</style><script>setInterval(function(){location.reload();},2000);</script></head><body>"
+             "</style><script>setInterval(function(){location.reload();},1000);</script></head><body>"
              "<h1>Sistema Embarcado - Monitoramento</h1>"
              "%s"
              "<section><h2>Dados dos Sensores</h2><div class=\"grid\">"
@@ -159,7 +180,7 @@ void create_http_response()
              "<div class=\"acoes\"><a href=\"/led/on\">Ligar LED</a> <a href=\"/led/off\">Desligar LED</a></div></section>"
              "<section><h2>Conectividade</h2><div class=\"conn\">"
              "<p><strong>WiFi:</strong> <span class=\"ok\">Conectado</span></p><p><strong>IP:</strong> %s</p></div></section>"
-             "<p class=\"atual\">Atualizacao automatica a cada 2 s</p>"
+             "<p class=\"atual\">Atualizacao automatica a cada 1 s</p>"
              "</body></html>\r\n",
              movimento_detectado ? "<div class=\"alerta-movimento\">Movimento detectado pelo sensor VL53L0X!</div>" : "",
              temperatura, humidade, luminosidade_pct, luminosidade, distancia,
