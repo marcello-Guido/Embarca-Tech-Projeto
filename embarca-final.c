@@ -2,6 +2,10 @@
 #include "pico/stdlib.h"
 #include <stdlib.h>
 
+// Buzzer
+#include "hardware/pwm.h"
+#include "hardware/clocks.h"
+
 // FreeRTOS
 #include "FreeRTOS.h"
 #include "task.h"
@@ -18,30 +22,38 @@
 #include "bh1750.h"
 #include "vl53l0x.h"
 
-#define BUTTON1_PIN 5  // botão 1
-#define BUTTON2_PIN 6  // botão 2
-#define LED_PIN 12     // sensor (mesmo pino do LED azul RGB)
-#define LED_RGB_GREEN_PIN 11  // LED verde do RGB – acionado se temp <= 26 °C
-#define LED_RGB_BLUE_PIN 12   // LED azul do RGB – acionado se 26 < temp <= 28 °C
-#define LED_RGB_RED_PIN 13    // LED vermelho do RGB – acionado se temp > 28 °C
+#define BUTTON1_PIN 5        // botão 1
+#define BUTTON2_PIN 6        // botão 2
+#define LED_PIN 12           // sensor (mesmo pino do LED azul RGB)
+#define LED_RGB_GREEN_PIN 11 // LED verde do RGB – acionado se temp <= 26 °C
+#define LED_RGB_BLUE_PIN 12  // LED azul do RGB – acionado se 26 < temp <= 28 °C
+#define LED_RGB_RED_PIN 13   // LED vermelho do RGB – acionado se temp > 28 °C
 #define TEMP_GREEN_MAX_CELSIUS 26.0f
 #define TEMP_BLUE_MIN_CELSIUS 26.0f
 #define TEMP_BLUE_MAX_CELSIUS 28.0f
 #define TEMP_ALERT_CELSIUS 28.0f
+
+// Configuração do pino do buzzer
+#define BUZZER_PIN 21
+
+// Configuração da frequência do buzzer (em Hz)
+#define BUZZER_FREQUENCY 100
 
 /* VL53L0X – movimento = variação de distância >= 300 mm */
 #define MOVIMENTO_THRESHOLD_MM 300
 
 /* Escala de luminosidade: 0–1000 lux → 0–100%
    < 50 lux = escuro | 50–300 lux = média | > 300 lux = claro | 1000 lux = luz intensa */
-#define LUX_MIN   0.0f
-#define LUX_MAX   1000.0f
+#define LUX_MIN 0.0f
+#define LUX_MAX 100.0f
 
 /** Converte lux em porcentagem (0–100%). Escala: 0 lux = 0%, 1000 lux = 100%. */
 static float lux_to_percent(float lux)
 {
-    if (lux <= 0.0f) return 0.0f;
-    if (lux >= LUX_MAX) return 100.0f;
+    if (lux <= 0.0f)
+        return 0.0f;
+    if (lux >= LUX_MAX)
+        return 100.0f;
     return (lux / LUX_MAX) * 100.0f;
 }
 
@@ -54,7 +66,8 @@ float temperatura = 0.0f;
 float humidade = 0.0f;
 float luminosidade = 0.0f;
 float distancia = 0.0f;
-volatile bool movimento_detectado = false;  /* VL53L0X: variação >= 300 mm */
+volatile bool movimento_detectado = false; /* VL53L0X: variação >= 300 mm */
+volatile bool beep_ativo = false;
 
 // ---------- WIFI TASK ----------
 #define WIFI_SSID "MAURO GUIDO"
@@ -71,6 +84,47 @@ void delay_ms(uint32_t ms);
 
 volatile bool wifi_conectado = false; // outras tasks podem ler isso
 
+// Definição de uma função para inicializar o PWM no pino do buzzer
+#define BUZZER_TOP 1000
+
+void pwm_init_buzzer(uint pin)
+{
+    gpio_set_function(pin, GPIO_FUNC_PWM);
+    uint slice = pwm_gpio_to_slice_num(pin);
+
+    pwm_config cfg = pwm_get_default_config();
+    pwm_config_set_wrap(&cfg, BUZZER_TOP);
+    pwm_config_set_clkdiv(&cfg, 125.0f); // valor inicial
+
+    pwm_init(slice, &cfg, true);
+    pwm_set_gpio_level(pin, 0);
+    pwm_set_enabled(slice, false);
+}
+
+void set_buzzer_frequency(uint pin, uint freq)
+{
+    uint slice = pwm_gpio_to_slice_num(pin);
+    float div = 125000000.0f / (freq * BUZZER_TOP);
+
+    if (div < 1.0f) div = 1.0f;
+    if (div > 255.0f) div = 255.0f;
+
+    pwm_set_clkdiv(slice, div);
+    pwm_set_gpio_level(pin, BUZZER_TOP / 2); // 50%
+}
+// Definição de uma função para emitir um beep com duração especificada
+void ativarBeep(uint pin)
+{
+    beep_ativo = true;
+    pwm_set_enabled(pwm_gpio_to_slice_num(pin), true);
+}
+
+void desativarBeep(uint pin)
+{
+    beep_ativo = false;
+    pwm_set_gpio_level(pin, 0);
+    pwm_set_enabled(pwm_gpio_to_slice_num(pin), false);
+}
 // Resposta http – página aprimorada com seções e atualização dinâmica
 void create_http_response()
 {
@@ -101,7 +155,7 @@ void create_http_response()
              "<div class=\"card\"><div>Distancia</div><div class=\"v\">%.0f</div><div class=\"u\">mm</div></div>"
              "</div></section>"
              "<section><h2>Status do Sistema</h2>"
-             "<p><strong>Botao 1:</strong> %s</p><p><strong>Botao 2:</strong> %s</p>"
+             "<p><strong>Alarme:</strong> %s</p>"
              "<div class=\"acoes\"><a href=\"/led/on\">Ligar LED</a> <a href=\"/led/off\">Desligar LED</a></div></section>"
              "<section><h2>Conectividade</h2><div class=\"conn\">"
              "<p><strong>WiFi:</strong> <span class=\"ok\">Conectado</span></p><p><strong>IP:</strong> %s</p></div></section>"
@@ -109,7 +163,7 @@ void create_http_response()
              "</body></html>\r\n",
              movimento_detectado ? "<div class=\"alerta-movimento\">Movimento detectado pelo sensor VL53L0X!</div>" : "",
              temperatura, humidade, luminosidade_pct, luminosidade, distancia,
-             button1, button2, ip_str);
+             button1, ip_str);
 }
 
 static err_t http_callback(void *arg, struct tcp_pcb *tpcb, struct pbuf *p, err_t err)
@@ -187,13 +241,13 @@ void buttons()
         button1_last_state = button1_state;
         if (button1_state)
         {
-            snprintf(button1, sizeof(button1), "Botão 1 foi pressionado!");
-            printf("Botão 1 pressionado\n");
+            snprintf(button1, sizeof(button1), "Alarme Ativado!");
+            ativarBeep(BUZZER_PIN);
         }
         else
         {
-            snprintf(button1, sizeof(button1), "Botão 1 foi solto!");
-            printf("Botão 1 solto\n");
+            snprintf(button1, sizeof(button1), "Alarme Ativado!");
+            ativarBeep(BUZZER_PIN);
         }
     }
     if (button2_state != button2_last_state)
@@ -201,13 +255,13 @@ void buttons()
         button2_last_state = button2_state;
         if (button2_state)
         {
-            snprintf(button2, sizeof(button2), "Botão 2 foi pressionado!");
-            printf("Botão 2 pressionado\n");
+            snprintf(button1, sizeof(button1), "Alarme Desativado!");
+            desativarBeep(BUZZER_PIN);
         }
         else
         {
-            snprintf(button2, sizeof(button2), "Botão 2 foi solto!");
-            printf("Botão 2 solto\n");
+            snprintf(button1, sizeof(button1), "Alarme Desativado!");
+            desativarBeep(BUZZER_PIN);
         }
     }
 }
@@ -230,7 +284,7 @@ void taskTempUmidade(void *pvParameters)
     {
         printf("Falha na inicialização do sensor!\n");
         while (1)
-             vTaskDelay(pdMS_TO_TICKS(4000));
+            vTaskDelay(pdMS_TO_TICKS(4000));
     }
 
     while (1)
@@ -281,7 +335,7 @@ void taskDistancia(void *pvParameters)
         printf("Falha ao inicializar o VL53L0X.\n");
         while (true)
         {
-            vTaskDelay(pdMS_TO_TICKS(1000)); 
+            vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
     while (1)
@@ -300,7 +354,8 @@ void taskDistancia(void *pvParameters)
             if (dist_anterior_mm >= 0)
             {
                 int delta = dis - dist_anterior_mm;
-                if (delta < 0) delta = -delta;
+                if (delta < 0)
+                    delta = -delta;
                 movimento_detectado = (delta >= MOVIMENTO_THRESHOLD_MM);
             }
             dist_anterior_mm = dis;
@@ -374,9 +429,40 @@ void taskHttp(void *pvParameters)
     }
 }
 
+void task_buzzer(void *params)
+{
+    uint pin = BUZZER_PIN;
+
+    while (true)
+    {
+        if (beep_ativo)
+        {
+            // Sobe
+            for (int f = 800; f <= 2200 && beep_ativo; f += 25)
+            {
+                set_buzzer_frequency(pin, f);
+                vTaskDelay(pdMS_TO_TICKS(8));
+            }
+
+            // Desce
+            for (int f = 2200; f >= 800 && beep_ativo; f -= 25)
+            {
+                set_buzzer_frequency(pin, f);
+                vTaskDelay(pdMS_TO_TICKS(8));
+            }
+        }
+        else
+        {
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+    }
+}
+
 int main()
 {
     stdio_init_all();
+
+    pwm_init_buzzer(BUZZER_PIN);
 
     i2c_init(I2C_PORT, 100 * 1000); // 100 kHz
     gpio_set_function(SDA_PIN, GPIO_FUNC_I2C);
@@ -390,15 +476,15 @@ int main()
     /* LED azul RGB (GPIO 12) = LED_PIN – usado também como “Iluminação” na página web */
     gpio_init(LED_RGB_BLUE_PIN);
     gpio_set_dir(LED_RGB_BLUE_PIN, GPIO_OUT);
-    gpio_put(LED_RGB_BLUE_PIN, 0);  /* inicia apagado */
+    gpio_put(LED_RGB_BLUE_PIN, 0); /* inicia apagado */
 
     gpio_init(LED_RGB_GREEN_PIN);
     gpio_set_dir(LED_RGB_GREEN_PIN, GPIO_OUT);
-    gpio_put(LED_RGB_GREEN_PIN, 0);  /* inicia apagado */
+    gpio_put(LED_RGB_GREEN_PIN, 0); /* inicia apagado */
 
     gpio_init(LED_RGB_RED_PIN);
     gpio_set_dir(LED_RGB_RED_PIN, GPIO_OUT);
-    gpio_put(LED_RGB_RED_PIN, 0);  /* inicia apagado */
+    gpio_put(LED_RGB_RED_PIN, 0); /* inicia apagado */
 
     gpio_init(BUTTON1_PIN);
     gpio_set_dir(BUTTON1_PIN, GPIO_IN);
@@ -425,6 +511,7 @@ int main()
     xTaskCreate(taskDistancia, "Distancia", 1024, NULL, 1, NULL);
     xTaskCreate(taskWifi, "WiFi", 2048, NULL, 2, NULL);
     xTaskCreate(taskHttp, "Http", 2048, NULL, 2, NULL);
+    xTaskCreate(task_buzzer, "buzzer", 1024, NULL, 1, NULL);
 
     // Inicia o scheduler
     vTaskStartScheduler();

@@ -73,6 +73,7 @@ target_link_libraries(embarca-final
     FreeRTOS-Kernel-Heap4
     pico_cyw43_arch_lwip_threadsafe_background  
     hardware_i2c
+    hardware_pwm
 )
 
 pico_add_extra_outputs(embarca-final)
