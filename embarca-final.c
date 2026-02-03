@@ -177,7 +177,6 @@ void create_http_response()
              "</div></section>"
              "<section><h2>Status do Sistema</h2>"
              "<p><strong>Alarme:</strong> %s</p>"
-             "<div class=\"acoes\"><a href=\"/led/on\">Ligar LED</a> <a href=\"/led/off\">Desligar LED</a></div></section>"
              "<section><h2>Conectividade</h2><div class=\"conn\">"
              "<p><strong>WiFi:</strong> <span class=\"ok\">Conectado</span></p><p><strong>IP:</strong> %s</p></div></section>"
              "<p class=\"atual\">Atualizacao automatica a cada 1 s</p>"
@@ -558,5 +557,5 @@ int i2c_read(uint8_t addr, uint8_t *data, uint16_t len)
 // Função para delay
 void delay_ms(uint32_t ms)
 {
-    sleep_ms(ms);
+    sleep_ms(ms);   
 }
